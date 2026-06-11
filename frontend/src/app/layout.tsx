@@ -5,6 +5,24 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "EVO Voice Agent | Imperial Barber Studio",
   description: "Demo profesional de llamada IA para Imperial Barber Studio con Sofía IA.",
+  applicationName: "EVO Voice Agent",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "EVO Voice Agent",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: "#050507",
 };
 
 export default function RootLayout({

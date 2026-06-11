@@ -1,0 +1,12 @@
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="192" height="192" rx="48" fill="#050507"/>
+  <circle cx="96" cy="96" r="58" stroke="url(#g1)" stroke-width="8"/>
+  <circle cx="96" cy="96" r="30" fill="#111118" stroke="#E7C97A" stroke-opacity="0.4"/>
+  <text x="96" y="104" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" fill="#FFFFFF" font-weight="700">EVO</text>
+  <defs>
+    <linearGradient id="g1" x1="42" y1="42" x2="150" y2="150" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D33CFF"/>
+      <stop offset="1" stop-color="#6B64FF"/>
+    </linearGradient>
+  </defs>
+</svg>
