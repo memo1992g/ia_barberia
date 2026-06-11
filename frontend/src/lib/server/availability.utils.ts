@@ -1,0 +1,322 @@
+import {
+  BUFFER_MINUTES,
+  BUSINESS_END_HOUR,
+  BUSINESS_START_HOUR,
+  SLOT_STEP_MINUTES,
+  TIME_ZONE,
+  addMinutes,
+  formatDate,
+  formatTime,
+  getBusinessWindow,
+  isPastDateTime,
+  isSunday,
+  nextBusinessDay,
+  parseTimeOnDate,
+  roundUpToStep,
+} from "./date.utils";
+
+export const SERVICE_DURATIONS: Record<string, number> = {
+  "Corte clásico": 30,
+  "Degradado / Fade": 45,
+  Barba: 25,
+  "Corte + barba": 60,
+  Cejas: 15,
+  "Tratamiento capilar": 60,
+};
+
+const SERVICE_ALIASES: Record<string, string> = {
+  "corte de cabello": "Corte clásico",
+  corte: "Corte clásico",
+  "corte clásico": "Corte clásico",
+  "corte clasico": "Corte clásico",
+  fade: "Degradado / Fade",
+  degradado: "Degradado / Fade",
+  "degradado / fade": "Degradado / Fade",
+  barba: "Barba",
+  "corte y barba": "Corte + barba",
+  "corte + barba": "Corte + barba",
+  cejas: "Cejas",
+  "tratamiento capilar": "Tratamiento capilar",
+};
+
+const DIGIT_WORDS: Record<string, string> = {
+  cero: "0",
+  uno: "1",
+  una: "1",
+  un: "1",
+  dos: "2",
+  tres: "3",
+  cuatro: "4",
+  cinco: "5",
+  seis: "6",
+  siete: "7",
+  ocho: "8",
+  nueve: "9",
+};
+
+const TEENS_WORDS: Record<string, string> = {
+  diez: "10",
+  once: "11",
+  doce: "12",
+  trece: "13",
+  catorce: "14",
+  quince: "15",
+  dieciseis: "16",
+  dieciséis: "16",
+  diecisiete: "17",
+  dieciocho: "18",
+  diecinueve: "19",
+};
+
+const TENS_WORDS: Record<string, number> = {
+  veinte: 20,
+  treinta: 30,
+  cuarenta: 40,
+  cincuenta: 50,
+  sesenta: 60,
+  setenta: 70,
+  ochenta: 80,
+  noventa: 90,
+};
+
+export function normalizeServiceName(service: unknown) {
+  const raw = String(service || "").trim();
+  if (!raw) return "";
+
+  const normalized = raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return SERVICE_ALIASES[normalized] || raw;
+}
+
+export function isAmbiguousServiceRequest(service: unknown) {
+  const normalized = String(service || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized === "corte" || normalized.includes("corte de pelo") || normalized.includes("corte de cabello");
+}
+
+export function getDurationForService(service: unknown) {
+  const normalized = normalizeServiceName(service);
+  return SERVICE_DURATIONS[normalized] || null;
+}
+
+function normalizeWordToken(token: string) {
+  return String(token || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function parseSpanishNumberWords(value: string) {
+  const tokens = String(value || "")
+    .replace(/[.,;:()]/g, " ")
+    .split(/[\s-]+/)
+    .map(normalizeWordToken)
+    .filter(Boolean);
+
+  let digits = "";
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token in DIGIT_WORDS) {
+      digits += DIGIT_WORDS[token];
+      continue;
+    }
+
+    if (token in TEENS_WORDS) {
+      digits += TEENS_WORDS[token];
+      continue;
+    }
+
+    if (token in TENS_WORDS) {
+      const tenValue = TENS_WORDS[token];
+      const nextToken = tokens[index + 1];
+      const nextNextToken = tokens[index + 2];
+
+      if (nextToken === "y" && nextNextToken && nextNextToken in DIGIT_WORDS) {
+        digits += String(tenValue + Number(DIGIT_WORDS[nextNextToken]));
+        index += 2;
+        continue;
+      }
+
+      digits += String(tenValue);
+      continue;
+    }
+
+    if (/^\d+$/.test(token)) {
+      digits += token;
+    }
+  }
+
+  return digits;
+}
+
+export function normalizePhoneInput(phone: unknown) {
+  const raw = String(phone || "").trim();
+  if (!raw) return "";
+
+  const cleaned = raw.replace(/\s+/g, " ").replace(/[()]/g, "").trim();
+  const numericCandidate = cleaned.replace(/[^\d+]/g, "");
+  const digitsFromNumbers = numericCandidate.replace(/^\+/, "");
+  const digitsFromWords = parseSpanishNumberWords(cleaned);
+
+  let digits = digitsFromNumbers.length >= 8 ? digitsFromNumbers : digitsFromWords;
+
+  if (digits.startsWith("503") && digits.length === 11) {
+    digits = digits.slice(3);
+  }
+
+  if (digits.length === 8) {
+    return `+503 ${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
+
+  if (digits.length === 11 && digits.startsWith("503")) {
+    return `+503 ${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }
+
+  return raw;
+}
+
+export function isValidPhoneInput(phone: unknown) {
+  const normalized = normalizePhoneInput(phone);
+  const digits = normalized.replace(/[^\d]/g, "");
+  return digits.length === 11 && digits.startsWith("503");
+}
+
+export function validateBusinessRules(dateTime: any, durationMinutes: number) {
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+    return {
+      ok: false,
+      reason: "Duracion invalida",
+      message: "La duración del servicio no es válida.",
+    };
+  }
+
+  if (isSunday(dateTime)) {
+    return {
+      ok: false,
+      reason: "Cerrado el domingo",
+      message: "La barbería está cerrada los domingos. Te puedo ofrecer lunes.",
+    };
+  }
+
+  const end = addMinutes(dateTime, durationMinutes);
+  const window = getBusinessWindow(dateTime);
+
+  if (isPastDateTime(dateTime)) {
+    return {
+      ok: false,
+      reason: "Horario pasado",
+      message: "No puedo agendar una cita en un horario pasado.",
+    };
+  }
+
+  if (dateTime < window.start || end > window.end) {
+    return {
+      ok: false,
+      reason: "Fuera de horario",
+      message: `La barbería atiende de ${BUSINESS_START_HOUR.toString().padStart(2, "0")}:00 a ${BUSINESS_END_HOUR}:00.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function overlapsWithBuffer(candidateStart: any, candidateEnd: any, busyStart: any, busyEnd: any) {
+  const bufferedStart = busyStart.minus({ minutes: BUFFER_MINUTES });
+  const bufferedEnd = busyEnd.plus({ minutes: BUFFER_MINUTES });
+  return candidateStart < bufferedEnd && candidateEnd > bufferedStart;
+}
+
+export function slotConflicts(candidateStart: any, candidateEnd: any, busyBlocks: any[]) {
+  return busyBlocks.some((busy) => {
+    const busyStart = parseTimeOnDate(busy.startDate, busy.startTime);
+    const busyEnd = parseTimeOnDate(busy.endDate, busy.endTime);
+    return overlapsWithBuffer(candidateStart, candidateEnd, busyStart, busyEnd);
+  });
+}
+
+export function generateAlternativeSlots({
+  currentDate,
+  requestedStartTime,
+  durationMinutes,
+  busyBlocks = [],
+}: {
+  currentDate: any;
+  requestedStartTime: string;
+  durationMinutes: number;
+  busyBlocks?: any[];
+}) {
+  const alternatives: string[] = [];
+  let searchDate = currentDate.setZone(TIME_ZONE);
+  const requested = parseTimeOnDate(formatDate(searchDate), requestedStartTime);
+
+  const maxDaysToScan = 7;
+  for (let dayIndex = 0; dayIndex < maxDaysToScan && alternatives.length < 3; dayIndex += 1) {
+    if (dayIndex > 0) {
+      searchDate = nextBusinessDay(searchDate);
+    }
+
+    if (isSunday(searchDate)) {
+      continue;
+    }
+
+    const startOfBusiness = searchDate.set({
+      hour: BUSINESS_START_HOUR,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+    });
+    const endOfBusiness = searchDate.set({
+      hour: BUSINESS_END_HOUR,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+    });
+
+    let cursor = dayIndex === 0 ? roundUpToStep(requested, SLOT_STEP_MINUTES) : startOfBusiness;
+    if (dayIndex === 0 && cursor < startOfBusiness) {
+      cursor = startOfBusiness;
+    }
+
+    const passes = [1, -1];
+    for (const direction of passes) {
+      let candidate = cursor;
+      while (candidate >= startOfBusiness && candidate < endOfBusiness && alternatives.length < 3) {
+        const candidateEnd = candidate.plus({ minutes: durationMinutes });
+        if (candidateEnd <= endOfBusiness && !slotConflicts(candidate, candidateEnd, busyBlocks)) {
+          const formatted = formatTime(candidate);
+          if (!alternatives.includes(formatted)) {
+            alternatives.push(formatted);
+          }
+        }
+
+        candidate = candidate.plus({ minutes: direction * SLOT_STEP_MINUTES });
+        if (direction === 1 && candidate <= requested && dayIndex === 0) {
+          continue;
+        }
+      }
+    }
+
+    if (dayIndex === 0 && alternatives.length > 0) {
+      const forward = alternatives.filter((slot) => slot >= requestedStartTime);
+      const backward = alternatives.filter((slot) => slot < requestedStartTime);
+      const ordered = [...forward, ...backward];
+      return ordered.slice(0, 3);
+    }
+  }
+
+  return alternatives.slice(0, 3);
+}
