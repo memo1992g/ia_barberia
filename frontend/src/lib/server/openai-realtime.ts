@@ -1,6 +1,15 @@
 const REALTIME_MODEL = "gpt-realtime";
 const REALTIME_VOICE = "coral";
 
+function getVadThreshold() {
+  const raw = Number(process.env.REALTIME_VAD_THRESHOLD || 0.75);
+  if (Number.isNaN(raw)) {
+    return 0.75;
+  }
+
+  return Math.min(0.95, Math.max(0.5, raw));
+}
+
 function buildSofiaInstructions() {
   return `Eres Sofía IA, recepcionista virtual de Imperial Barber Studio.
 
@@ -39,6 +48,13 @@ Flujo:
 12. Si está ocupado, ofrece hasta 3 horarios alternativos.
 13. Si es domingo, indica que está cerrado y ofrece lunes.
 14. Si está fuera de horario, ofrece horarios disponibles dentro del horario laboral.
+15. Si una herramienta devuelve un mensaje de repetición o shouldRepeatField, usa exactamente ese mensaje y no inventes otra respuesta.
+16. Si el texto del cliente es ruido, silencio, "...", "mmm", "eh", "ah" o no se entiende bien, no avances la conversación.
+17. Si falta un dato específico, pide solo ese dato:
+- hora: "Disculpá, no logré escuchar la hora. ¿Me la repetís?"
+- teléfono: "Disculpá, no logré escuchar el número. ¿Me lo repetís despacio?"
+- nombre: "Disculpá, no logré escuchar tu nombre. ¿Me lo repetís?"
+- servicio: "Disculpá, no logré escuchar el servicio. ¿Cuál querías?"
 
 Si el cliente pide un "corte" sin especificar cuál, responde:
 "Claro, ofrecemos corte clásico, degradado o fade, barba, corte + barba, cejas y tratamiento capilar. ¿Cuál te gustaría?"
@@ -105,11 +121,15 @@ export async function createRealtimeSession() {
     instructions: buildSofiaInstructions(),
     audio: {
       input: {
+        noise_reduction: {
+          type: "near_field",
+        },
         turn_detection: {
           type: "server_vad",
-          threshold: 0.5,
-          silence_duration_ms: 500,
+          threshold: getVadThreshold(),
+          silence_duration_ms: 900,
           prefix_padding_ms: 300,
+          create_response: true,
         },
         transcription: {
           model: "gpt-4o-mini-transcribe",

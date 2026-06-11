@@ -10,6 +10,8 @@ export type CallStatus =
   | "ocupado"
   | "error";
 
+export type AudioQuality = "Audio limpio" | "Ruido moderado" | "No se escucha bien";
+
 export type TranscriptEntry = {
   id: string;
   speaker: "Cliente" | "Sofía IA";
@@ -33,10 +35,22 @@ export type RealtimeCallbacks = {
   onAlternatives: (alternatives: string[]) => void;
   onError: (message: string) => void;
   onAudioLevel?: (level: number) => void;
+  onAudioQuality?: (quality: AudioQuality) => void;
   onLog?: (message: string) => void;
 };
 
 const REALTIME_URL = "https://api.openai.com/v1/realtime/calls";
+
+const BARBER_SERVICES = [
+  "corte clásico",
+  "degradado / fade",
+  "barba",
+  "corte + barba",
+  "cejas",
+  "tratamiento capilar",
+];
+
+const SHORT_FILLS = new Set(["mm", "mmm", "eh", "ah", "uh", "hmm", "aja", "ajá", "um", "emm"]);
 
 type BufferedToolCall = {
   itemId?: string;
@@ -46,23 +60,233 @@ type BufferedToolCall = {
   outputIndex?: number;
 };
 
+function normalizeSpeechText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function usefulCharacterCount(value: string) {
+  return normalizeSpeechText(value).replace(/[^a-z0-9]/g, "").length;
+}
+
+function isDoubtfulTranscript(value: string) {
+  const normalized = normalizeSpeechText(value);
+  if (!normalized) {
+    return true;
+  }
+
+  if (normalized === "..." || /^[.\s…-]+$/.test(normalized)) {
+    return true;
+  }
+
+  const compact = normalized.replace(/[^a-z0-9]/g, "");
+  if (compact.length < 2) {
+    return true;
+  }
+
+  if (SHORT_FILLS.has(normalized) || SHORT_FILLS.has(compact)) {
+    return true;
+  }
+
+  if (/^(m+|h+|a+h+|e+h+|u+m+)$/.test(compact)) {
+    return true;
+  }
+
+  return false;
+}
+
+function isServiceAmbiguous(rawService: string) {
+  const normalized = normalizeSpeechText(rawService);
+  if (!normalized) {
+    return true;
+  }
+
+  if (normalized.includes("corte") && !["corte clasico", "corte + barba", "corte barba"].includes(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
+function canonicalizeService(rawService: string) {
+  const normalized = normalizeSpeechText(rawService);
+  const serviceMap: Record<string, string> = {
+    "corte clasico": "Corte clásico",
+    "degradado fade": "Degradado / Fade",
+    fade: "Degradado / Fade",
+    degradado: "Degradado / Fade",
+    barba: "Barba",
+    "corte barba": "Corte + barba",
+    "corte + barba": "Corte + barba",
+    cejas: "Cejas",
+    "tratamiento capilar": "Tratamiento capilar",
+  };
+
+  if (serviceMap[normalized]) {
+    return serviceMap[normalized];
+  }
+
+  return rawService.trim();
+}
+
+function inferAudioQuality(level: number): AudioQuality {
+  if (level < 0.035) {
+    return "No se escucha bien";
+  }
+
+  if (level < 0.13) {
+    return "Ruido moderado";
+  }
+
+  return "Audio limpio";
+}
+
+function buildRepeatMessage(field?: string) {
+  switch (field) {
+    case "hora":
+      return "Disculpá, no logré escuchar la hora. ¿Me la repetís?";
+    case "teléfono":
+    case "telefono":
+      return "Disculpá, no logré escuchar el número. ¿Me lo repetís despacio?";
+    case "nombre":
+      return "Disculpá, no logré escuchar tu nombre. ¿Me lo repetís?";
+    case "servicio":
+      return "Disculpá, no logré escuchar el servicio. ¿Cuál querías?";
+    case "fecha":
+      return "Disculpá, no logré escuchar la fecha. ¿Me la repetís?";
+    default:
+      return "Disculpá, no logré escucharte bien. ¿Me lo repetís, por favor?";
+  }
+}
+
+function buildServiceListMessage() {
+  return `Claro, ofrecemos ${BARBER_SERVICES.join(", ")}. ¿Cuál te gustaría?`;
+}
+
+function validateDate(value: string) {
+  const normalized = normalizeSpeechText(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized);
+}
+
+function validateTime(value: string) {
+  const normalized = normalizeSpeechText(value);
+  return /^\d{2}:\d{2}$/.test(normalized);
+}
+
+function validateToolArgs(toolName: string, args: Record<string, unknown>) {
+  const getString = (key: string) => (typeof args[key] === "string" ? String(args[key]).trim() : "");
+  const rawService = getString("service");
+
+  if (!rawService || isDoubtfulTranscript(rawService)) {
+    return {
+      ok: false,
+      field: "servicio",
+      message: buildRepeatMessage("servicio"),
+    };
+  }
+
+  if (isServiceAmbiguous(rawService)) {
+    return {
+      ok: false,
+      field: "servicio",
+      message: buildServiceListMessage(),
+    };
+  }
+
+  const service = canonicalizeService(rawService);
+  const date = getString("date");
+  const startTime = getString("startTime");
+
+  if (!date || isDoubtfulTranscript(date) || !validateDate(date)) {
+    return {
+      ok: false,
+      field: "fecha",
+      message: buildRepeatMessage("fecha"),
+    };
+  }
+
+  if (!startTime || isDoubtfulTranscript(startTime) || !validateTime(startTime)) {
+    return {
+      ok: false,
+      field: "hora",
+      message: buildRepeatMessage("hora"),
+    };
+  }
+
+  if (toolName === "checkAvailability") {
+    return {
+      ok: true,
+      args: {
+        service,
+        date,
+        startTime,
+        durationMinutes: Number(args.durationMinutes || 0),
+      },
+    };
+  }
+
+  const customerName = getString("customerName");
+  const phone = getString("phone");
+
+  if (!customerName || isDoubtfulTranscript(customerName) || usefulCharacterCount(customerName) < 2) {
+    return {
+      ok: false,
+      field: "nombre",
+      message: buildRepeatMessage("nombre"),
+    };
+  }
+
+  if (!phone || isDoubtfulTranscript(phone) || usefulCharacterCount(phone) < 2) {
+    return {
+      ok: false,
+      field: "telefono",
+      message: buildRepeatMessage("teléfono"),
+    };
+  }
+
+  return {
+    ok: true,
+    args: {
+      customerName,
+      phone,
+      service,
+      date,
+      startTime,
+      durationMinutes: Number(args.durationMinutes || 0),
+    },
+  };
+}
+
 function createTranscriptStore(onTranscriptChange: RealtimeCallbacks["onTranscriptChange"]) {
   const entries = new Map<string, TranscriptEntry>();
 
   function upsert(id: string, speaker: TranscriptEntry["speaker"], delta: string) {
     const existing = entries.get(id);
+    const nextText = `${existing?.text || ""}${delta}`;
+    if (speaker === "Cliente" && (isDoubtfulTranscript(nextText) || usefulCharacterCount(nextText) < 2)) {
+      return;
+    }
+
     const next: TranscriptEntry = {
       id,
       speaker,
-      text: (existing?.text || "") + delta,
+      text: nextText,
     };
     entries.set(id, next);
     onTranscriptChange(Array.from(entries.values()));
   }
 
   function finalize(id: string, speaker: TranscriptEntry["speaker"], fullText: string) {
+    if (speaker === "Cliente" && (isDoubtfulTranscript(fullText) || usefulCharacterCount(fullText) < 2)) {
+      return false;
+    }
     entries.set(id, { id, speaker, text: fullText });
     onTranscriptChange(Array.from(entries.values()));
+    return true;
   }
 
   return { upsert, finalize };
@@ -135,7 +359,14 @@ export async function startRealtimeCall(callbacks: RealtimeCallbacks) {
 
   let micStream: MediaStream;
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+    });
     callbacks.onLog?.("Permiso de micrófono concedido.");
   } catch {
     pc.close();
@@ -164,11 +395,13 @@ export async function startRealtimeCall(callbacks: RealtimeCallbacks) {
       }
       const level = Math.min(1, sum / data.length / 255);
       callbacks.onAudioLevel?.(level);
+      callbacks.onAudioQuality?.(inferAudioQuality(level));
       rafId = requestAnimationFrame(tick);
     };
     tick();
   } catch {
     callbacks.onAudioLevel?.(0.08);
+    callbacks.onAudioQuality?.("Ruido moderado");
   }
 
   const dc = pc.createDataChannel("oai-events");
@@ -225,13 +458,35 @@ export async function startRealtimeCall(callbacks: RealtimeCallbacks) {
     );
 
     if (toolCall.name === "checkAvailability") {
+      const validation = validateToolArgs("checkAvailability", args as Record<string, unknown>);
+      if (!validation.ok) {
+        const message = validation.message || buildRepeatMessage();
+        callbacks.onStatusChange("escuchando");
+        callbacks.onLog?.(`checkAvailability bloqueada: ${message}`);
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: toolCall.callId,
+            output: JSON.stringify({
+              success: false,
+              message,
+              shouldRepeatField: validation.field || "clarification",
+            }),
+          },
+        });
+        sendEvent({ type: "response.create" });
+        return;
+      }
+
+      const normalizedArgs = validation.args!;
       callbacks.onStatusChange("revisando");
       try {
         const result = await checkAvailability({
-          service: String(args.service || ""),
-          date: String(args.date || ""),
-          startTime: String(args.startTime || ""),
-          durationMinutes: Number(args.durationMinutes || 0),
+          service: String(normalizedArgs.service || ""),
+          date: String(normalizedArgs.date || ""),
+          startTime: String(normalizedArgs.startTime || ""),
+          durationMinutes: Number(normalizedArgs.durationMinutes || 0),
         });
 
         callbacks.onAlternatives(result.alternatives || []);
@@ -268,26 +523,48 @@ export async function startRealtimeCall(callbacks: RealtimeCallbacks) {
     }
 
     if (toolCall.name === "createAppointment") {
+      const validation = validateToolArgs("createAppointment", args as Record<string, unknown>);
+      if (!validation.ok) {
+        const message = validation.message || buildRepeatMessage();
+        callbacks.onStatusChange("escuchando");
+        callbacks.onLog?.(`createAppointment bloqueada: ${message}`);
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: toolCall.callId,
+            output: JSON.stringify({
+              success: false,
+              message,
+              shouldRepeatField: validation.field || "clarification",
+            }),
+          },
+        });
+        sendEvent({ type: "response.create" });
+        return;
+      }
+
+      const normalizedArgs = validation.args!;
       try {
         const result = await createAppointment({
-          customerName: String(args.customerName || ""),
-          phone: String(args.phone || ""),
-          service: String(args.service || ""),
-          date: String(args.date || ""),
-          startTime: String(args.startTime || ""),
-          durationMinutes: Number(args.durationMinutes || 0),
+          customerName: String(normalizedArgs.customerName || ""),
+          phone: String(normalizedArgs.phone || ""),
+          service: String(normalizedArgs.service || ""),
+          date: String(normalizedArgs.date || ""),
+          startTime: String(normalizedArgs.startTime || ""),
+          durationMinutes: Number(normalizedArgs.durationMinutes || 0),
         });
 
         if (result.success) {
           callbacks.onStatusChange("confirmada");
           callbacks.onAlternatives([]);
           callbacks.onAppointment({
-            customerName: String(args.customerName || ""),
-            phone: String(args.phone || ""),
-            service: String(args.service || ""),
-            date: String(args.date || ""),
-            startTime: String(args.startTime || ""),
-            durationMinutes: Number(args.durationMinutes || 0),
+            customerName: String(normalizedArgs.customerName || ""),
+            phone: String(normalizedArgs.phone || ""),
+            service: String(normalizedArgs.service || ""),
+            date: String(normalizedArgs.date || ""),
+            startTime: String(normalizedArgs.startTime || ""),
+            durationMinutes: Number(normalizedArgs.durationMinutes || 0),
             eventId: result.eventId,
           });
         }
@@ -454,8 +731,15 @@ export async function startRealtimeCall(callbacks: RealtimeCallbacks) {
         break;
       case "conversation.item.input_audio_transcription.completed":
         if (event.item_id) {
-          transcripts.finalize(event.item_id, "Cliente", event.transcript || "");
-          callbacks.onLog?.(`Transcripcion cliente completada: ${event.transcript || ""}`);
+          const transcript = String(event.transcript || "");
+          const accepted = transcripts.finalize(event.item_id, "Cliente", transcript);
+          if (!accepted) {
+            callbacks.onLog?.("Transcripción cliente ignorada por ruido o silencio.");
+            callbacks.onStatusChange("escuchando");
+            sendEvent({ type: "response.create" });
+            break;
+          }
+          callbacks.onLog?.(`Transcripcion cliente completada: ${transcript}`);
         }
         break;
       case "response.output_text.delta":

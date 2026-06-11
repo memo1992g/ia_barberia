@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { startRealtimeCall } from "@/lib/realtime";
-import type { AppointmentCard, CallStatus, TranscriptEntry } from "@/lib/realtime";
+import type { AppointmentCard, AudioQuality, CallStatus, TranscriptEntry } from "@/lib/realtime";
 import { CallStatus as StatusBadge } from "@/components/CallStatus";
 
 const demoMode = String(process.env.NEXT_PUBLIC_DEMO_MODE || "").toLowerCase() === "true";
@@ -21,6 +21,12 @@ const statusLabel: Record<CallStatus, string> = {
   confirmada: "Cita confirmada",
   ocupado: "Horario ocupado",
   error: "Error",
+};
+
+const audioQualityClass: Record<AudioQuality, string> = {
+  "Audio limpio": "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
+  "Ruido moderado": "border-amber-500/20 bg-amber-500/10 text-amber-100",
+  "No se escucha bien": "border-rose-500/20 bg-rose-500/10 text-rose-100",
 };
 
 type MobileTab = "llamada" | "transcripcion" | "agenda";
@@ -54,6 +60,7 @@ function escapeIcsText(value: string) {
 export default function Page() {
   const [status, setStatus] = useState<CallStatus>("esperando");
   const [audioLevel, setAudioLevel] = useState(0.08);
+  const [audioQuality, setAudioQuality] = useState<AudioQuality>("Ruido moderado");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [appointment, setAppointment] = useState<AppointmentCard | null>(null);
   const [alternatives, setAlternatives] = useState<string[]>([]);
@@ -117,6 +124,7 @@ export default function Page() {
           setStatus("error");
         },
         onAudioLevel: setAudioLevel,
+        onAudioQuality: setAudioQuality,
         onLog: (message) => {
           setLogs((current) => [message, ...current].slice(0, 12));
         },
@@ -143,6 +151,7 @@ export default function Page() {
     setIsCalling(false);
     setStatus("esperando");
     setAudioLevel(0.08);
+    setAudioQuality("Ruido moderado");
   };
 
   const handleShareAppointment = async (channel: "whatsapp" | "sms") => {
@@ -288,6 +297,18 @@ Agendada por: EVO Voice Agent`;
               <div className="mt-1 text-sm font-medium text-white">{statusLabel[status]}</div>
             </div>
             <StatusBadge status={status} />
+          </div>
+
+          <div className="mt-3 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.25em] text-white/35">Audio</div>
+              <div className="mt-1 text-sm font-medium text-white">Calidad de señal</div>
+            </div>
+            <span
+              className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${audioQualityClass[audioQuality]}`}
+            >
+              {audioQuality}
+            </span>
           </div>
 
           <div className="mt-4 flex items-center gap-3 rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_center,rgba(18,18,28,0.92),rgba(5,5,7,0.96))] p-4">
@@ -557,6 +578,16 @@ Agendada por: EVO Voice Agent`;
                 <span>🔋</span>
               </div>
             </div>
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+              <span className="text-[10px] uppercase tracking-[0.22em] text-white/35">
+                Audio
+              </span>
+              <span
+                className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${audioQualityClass[audioQuality]}`}
+              >
+                {audioQuality}
+              </span>
+            </div>
           </div>
 
           {activeTabContent[mobileTab]}
@@ -634,6 +665,19 @@ Agendada por: EVO Voice Agent`;
 
             <div className="mt-4 text-center text-sm text-white/60">
               {demoMode ? "Modo demo sin calendario real" : "Conectado al calendario real"}
+            </div>
+
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/75">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  audioQuality === "Audio limpio"
+                    ? "bg-emerald-400"
+                    : audioQuality === "Ruido moderado"
+                      ? "bg-amber-400"
+                      : "bg-rose-400"
+                }`}
+              />
+              {audioQuality}
             </div>
 
             {error ? (
