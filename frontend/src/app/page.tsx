@@ -163,7 +163,7 @@ Cliente: ${appointment.customerName}%0A
 Fecha: ${appointment.date}%0A
 Hora: ${appointment.startTime}%0A
 Teléfono: ${appointment.phone}%0A
-Agendada por: EVO Voice Agent`;
+Agendada por: AZENTYA Voice Agent`;
 
     const rawMessage = `Cita confirmada en ${BARBERSHOP_NAME}
 Servicio: ${appointment.service}
@@ -171,7 +171,7 @@ Cliente: ${appointment.customerName}
 Fecha: ${appointment.date}
 Hora: ${appointment.startTime}
 Teléfono: ${appointment.phone}
-Agendada por: EVO Voice Agent`;
+Agendada por: AZENTYA Voice Agent`;
 
     if (channel === "whatsapp") {
       const whatsappUrl = `https://wa.me/?text=${message}`;
@@ -202,14 +202,14 @@ Agendada por: EVO Voice Agent`;
       `Servicio: ${appointment.service}`,
       `Fecha: ${appointment.date}`,
       `Hora: ${appointment.startTime}`,
-      `Creado por: EVO Voice Agent`,
+      `Creado por: AZENTYA Voice Agent`,
     ].join("\\n");
     const dtStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 
     const ics = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      `PRODID:-//EVO Voice Agent//${BARBERSHOP_NAME}//ES`,
+      `PRODID:-//AZENTYA Voice Agent//${BARBERSHOP_NAME}//ES`,
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
       "BEGIN:VEVENT",
@@ -278,12 +278,12 @@ Agendada por: EVO Voice Agent`;
                 Imperial Barber Studio
               </p>
               <h1 className="mt-1 text-xl font-semibold tracking-wide text-white">
-                EVO Voice Agent
+                AZENTYA Voice Agent
               </h1>
             </div>
             <div className="flex flex-col items-end gap-2">
               <span className="rounded-full border border-evo-gold/25 bg-evo-gold/10 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-evo-goldSoft">
-                Powered by EVO
+                Powered by AZENTYA
               </span>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] text-white/55">
                 Sofía IA
@@ -557,7 +557,7 @@ Agendada por: EVO Voice Agent`;
             <div className="text-[10px] uppercase tracking-[0.45em] text-white/35">
               Imperial Barber Studio
             </div>
-            <h1 className="text-lg font-semibold tracking-wide">EVO Voice Agent</h1>
+            <h1 className="text-lg font-semibold tracking-wide">AZENTYA Voice Agent</h1>
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/70">
