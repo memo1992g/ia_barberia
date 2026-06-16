@@ -18,12 +18,69 @@ const WEEKDAY_MAP = {
   sábado: 6,
 };
 
+const MONTH_MAP = {
+  enero: 1,
+  febrero: 2,
+  marzo: 3,
+  abril: 4,
+  mayo: 5,
+  junio: 6,
+  julio: 7,
+  agosto: 8,
+  septiembre: 9,
+  setiembre: 9,
+  octubre: 10,
+  noviembre: 11,
+  diciembre: 12,
+};
+
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function addMonthsPreservingDay(dateTime, monthsToAdd, day) {
+  let candidate = dateTime.plus({ months: monthsToAdd }).set({ day });
+  for (let i = 0; i < 3 && !candidate.isValid; i += 1) {
+    candidate = candidate.plus({ months: 1 }).set({ day });
+  }
+  return candidate;
+}
+
+function nextOrSameWeekdayFrom(baseDate, weekday) {
+  let candidate = baseDate.startOf("day");
+  while (candidate.weekday !== weekday) {
+    candidate = candidate.plus({ days: 1 });
+  }
+  return candidate;
+}
+
+function nextWeekdayAfter(baseDate, weekday) {
+  let candidate = baseDate.plus({ days: 1 }).startOf("day");
+  while (candidate.weekday !== weekday) {
+    candidate = candidate.plus({ days: 1 });
+  }
+  return candidate;
+}
+
+function thisWeekWeekdayFrom(baseDate, weekday) {
+  const delta = weekday - baseDate.weekday;
+  if (delta < 0) {
+    return null;
+  }
+  return baseDate.plus({ days: delta }).startOf("day");
+}
+
 export function nowInZone() {
   return DateTime.now().setZone(TIME_ZONE);
 }
 
 export function normalizeDateInput(input) {
-  const raw = String(input || "").trim().toLowerCase();
+  const raw = normalizeText(input);
   if (!raw) return "";
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
@@ -36,22 +93,90 @@ export function normalizeDateInput(input) {
     return formatDate(today);
   }
 
-  if (raw === "mañana" || raw === "manana") {
+  if (raw === "manana") {
     return formatDate(today.plus({ days: 1 }));
   }
 
-  if (raw === "pasado mañana" || raw === "pasado manana") {
+  if (raw === "pasado manana") {
     return formatDate(today.plus({ days: 2 }));
   }
 
   const matchedWeekday = Object.entries(WEEKDAY_MAP).find(([name]) => raw.includes(name));
   if (matchedWeekday) {
     const weekday = matchedWeekday[1];
-    let cursor = today.plus({ days: 1 });
-    while (cursor.weekday !== weekday) {
-      cursor = cursor.plus({ days: 1 });
+    const hasNextReference = /(proximo|siguiente|next)/.test(raw);
+    const hasThisReference = /(este|esta|este mismo)/.test(raw);
+
+    if (hasNextReference) {
+      return formatDate(nextWeekdayAfter(today, weekday));
     }
-    return formatDate(cursor);
+
+    if (hasThisReference) {
+      const currentWeekCandidate = thisWeekWeekdayFrom(today, weekday);
+      if (currentWeekCandidate && currentWeekCandidate >= today.startOf("day")) {
+        return formatDate(currentWeekCandidate);
+      }
+      return formatDate(nextWeekdayAfter(today, weekday));
+    }
+
+    return formatDate(today.weekday === weekday ? today : nextWeekdayAfter(today, weekday));
+  }
+
+  const dayOnlyMatch = raw.match(/^(?:el\s+)?(\d{1,2})(?:\s+de\s+(este|este\s+mes|este mes|del\s+mes|de\s+este\s+mes))?$/);
+  if (dayOnlyMatch) {
+    const day = Number(dayOnlyMatch[1]);
+    if (day >= 1 && day <= 31) {
+      const currentMonthCandidate = today.set({ day });
+      if (currentMonthCandidate.isValid && currentMonthCandidate >= today.startOf("day")) {
+        return formatDate(currentMonthCandidate);
+      }
+
+      const nextMonthCandidate = addMonthsPreservingDay(today, 1, day);
+      if (nextMonthCandidate.isValid) {
+        return formatDate(nextMonthCandidate);
+      }
+
+      return String(input).trim();
+    }
+  }
+
+  const monthMatch = raw.match(/^(?:el\s+)?(\d{1,2})(?:\s+de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?$/);
+  if (monthMatch) {
+    const day = Number(monthMatch[1]);
+    const month = MONTH_MAP[monthMatch[2]];
+    const year = Number(monthMatch[3] || today.year);
+    const candidate = DateTime.fromObject(
+      {
+        year,
+        month,
+        day,
+        hour: 0,
+        minute: 0,
+        second: 0,
+        millisecond: 0,
+      },
+      { zone: TIME_ZONE }
+    );
+    if (candidate.isValid) {
+      if (!monthMatch[3] && candidate < today.startOf("day")) {
+        const nextYearCandidate = DateTime.fromObject(
+          {
+            year: year + 1,
+            month,
+            day,
+            hour: 0,
+            minute: 0,
+            second: 0,
+            millisecond: 0,
+          },
+          { zone: TIME_ZONE }
+        );
+        if (nextYearCandidate.isValid) {
+          return formatDate(nextYearCandidate);
+        }
+      }
+      return formatDate(candidate);
+    }
   }
 
   return String(input).trim();
