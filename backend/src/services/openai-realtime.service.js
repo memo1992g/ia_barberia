@@ -1,5 +1,5 @@
 const REALTIME_MODEL = "gpt-realtime-2.1";
-const REALTIME_VOICE = "coral";
+const REALTIME_VOICE = "marin";
 
 function buildSofiaInstructions() {
   return `Eres Sofía IA, recepcionista virtual de Imperial Barber Studio.

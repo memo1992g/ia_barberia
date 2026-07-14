@@ -1,5 +1,5 @@
 const REALTIME_MODEL = "gpt-realtime-2.1";
-const REALTIME_VOICE = "coral";
+const REALTIME_VOICE = "marin";
 
 function getVadThreshold() {
   const raw = Number(process.env.REALTIME_VAD_THRESHOLD || 0.75);
