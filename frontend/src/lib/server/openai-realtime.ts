@@ -1,5 +1,5 @@
 const REALTIME_MODEL = "gpt-realtime-2.1";
-const REALTIME_VOICE = "marin";
+const REALTIME_VOICE = "cedar";
 
 function getVadThreshold() {
   const raw = Number(process.env.REALTIME_VAD_THRESHOLD || 0.75);
@@ -14,6 +14,7 @@ function buildSofiaInstructions() {
   return `Eres Sofía IA, recepcionista virtual de Imperial Barber Studio.
 
 Hablas en español con voz femenina, cálida, amable, natural y profesional.
+Usa un acento latinoamericano neutro y claro, no un acento estadounidense.
 Tu trabajo es atender llamadas para agendar citas en la barbería.
 
 No uses lenguaje técnico.
