@@ -1,4 +1,11 @@
 import { checkAvailability, createAppointment, requestRealtimeSession } from "./api";
+import {
+  buildServiceCatalogMessage,
+  getDurationForService,
+  getPriceForService,
+  isAmbiguousServiceRequest,
+  normalizeServiceName,
+} from "./server/availability.utils";
 
 export type CallStatus =
   | "esperando"
@@ -25,6 +32,7 @@ export type AppointmentCard = {
   date: string;
   startTime: string;
   durationMinutes: number;
+  price?: number;
   eventId?: string;
 };
 
@@ -40,15 +48,6 @@ export type RealtimeCallbacks = {
 };
 
 const REALTIME_URL = "https://api.openai.com/v1/realtime/calls";
-
-const BARBER_SERVICES = [
-  "corte clásico",
-  "degradado / fade",
-  "barba",
-  "corte + barba",
-  "cejas",
-  "tratamiento capilar",
-];
 
 const SHORT_FILLS = new Set(["mm", "mmm", "eh", "ah", "uh", "hmm", "aja", "ajá", "um", "emm"]);
 
@@ -100,37 +99,7 @@ function isDoubtfulTranscript(value: string) {
 }
 
 function isServiceAmbiguous(rawService: string) {
-  const normalized = normalizeSpeechText(rawService);
-  if (!normalized) {
-    return true;
-  }
-
-  if (normalized.includes("corte") && !["corte clasico", "corte + barba", "corte barba"].includes(normalized)) {
-    return true;
-  }
-
-  return false;
-}
-
-function canonicalizeService(rawService: string) {
-  const normalized = normalizeSpeechText(rawService);
-  const serviceMap: Record<string, string> = {
-    "corte clasico": "Corte clásico",
-    "degradado fade": "Degradado / Fade",
-    fade: "Degradado / Fade",
-    degradado: "Degradado / Fade",
-    barba: "Barba",
-    "corte barba": "Corte + barba",
-    "corte + barba": "Corte + barba",
-    cejas: "Cejas",
-    "tratamiento capilar": "Tratamiento capilar",
-  };
-
-  if (serviceMap[normalized]) {
-    return serviceMap[normalized];
-  }
-
-  return rawService.trim();
+  return isAmbiguousServiceRequest(rawService);
 }
 
 function inferAudioQuality(level: number): AudioQuality {
@@ -164,7 +133,7 @@ function buildRepeatMessage(field?: string) {
 }
 
 function buildServiceListMessage() {
-  return `Claro, ofrecemos ${BARBER_SERVICES.join(", ")}. ¿Cuál te gustaría?`;
+  return `${buildServiceCatalogMessage()} ¿Cuál te gustaría?`;
 }
 
 function validateDate(value: string) {
@@ -197,7 +166,7 @@ function validateToolArgs(toolName: string, args: Record<string, unknown>) {
     };
   }
 
-  const service = canonicalizeService(rawService);
+  const service = normalizeServiceName(rawService);
   const date = getString("date");
   const startTime = getString("startTime");
 
@@ -224,7 +193,7 @@ function validateToolArgs(toolName: string, args: Record<string, unknown>) {
         service,
         date,
         startTime,
-        durationMinutes: Number(args.durationMinutes || 0),
+        durationMinutes: getDurationForService(service) ?? Number(args.durationMinutes || 0),
       },
     };
   }
@@ -256,7 +225,7 @@ function validateToolArgs(toolName: string, args: Record<string, unknown>) {
       service,
       date,
       startTime,
-      durationMinutes: Number(args.durationMinutes || 0),
+      durationMinutes: getDurationForService(service) ?? Number(args.durationMinutes || 0),
     },
   };
 }
@@ -556,6 +525,7 @@ export async function startRealtimeCall(callbacks: RealtimeCallbacks) {
         });
 
         if (result.success) {
+          const price = getPriceForService(String(normalizedArgs.service || ""));
           callbacks.onStatusChange("confirmada");
           callbacks.onAlternatives([]);
           callbacks.onAppointment({
@@ -565,6 +535,7 @@ export async function startRealtimeCall(callbacks: RealtimeCallbacks) {
             date: String(normalizedArgs.date || ""),
             startTime: String(normalizedArgs.startTime || ""),
             durationMinutes: Number(normalizedArgs.durationMinutes || 0),
+            price: price ?? undefined,
             eventId: result.eventId,
           });
         }

@@ -13,8 +13,10 @@ import {
   toIsoWithZone,
 } from "../utils/date.utils.js";
 import {
+  buildServiceCatalogMessage,
   generateAlternativeSlots,
   getDurationForService,
+  getPriceForService,
   isAmbiguousServiceRequest,
   isValidPhoneInput,
   normalizeServiceName,
@@ -137,8 +139,7 @@ export function normalizeAppointmentPayload(payload, allowMissingConfirmation = 
   if (isAmbiguousServiceRequest(payload.service) && service === "Corte clásico") {
     const error = new Error("Servicio ambiguo.");
     error.statusCode = 400;
-    error.userMessage =
-      "Claro, ofrecemos corte clásico, degradado o fade, barba, corte + barba, cejas y tratamiento capilar. ¿Cuál te gustaría?";
+    error.userMessage = buildServiceCatalogMessage();
     throw error;
   }
   const date = normalizeDateInput(payload.date);
@@ -156,7 +157,7 @@ export function normalizeAppointmentPayload(payload, allowMissingConfirmation = 
   if (!catalogDuration) {
     const error = new Error("Servicio inválido.");
     error.statusCode = 400;
-    error.userMessage = "Ese servicio no existe en la lista de servicios de la barbería.";
+    error.userMessage = buildServiceCatalogMessage();
     throw error;
   }
 
@@ -350,6 +351,7 @@ export async function createAppointmentReal(payload) {
         service,
         customerName: normalized.customerName,
         phone: normalized.phone,
+        price: getPriceForService(service),
       },
     };
   } catch (error) {

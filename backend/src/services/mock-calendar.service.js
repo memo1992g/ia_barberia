@@ -1,7 +1,9 @@
 import { DateTime } from "luxon";
 import { TIME_ZONE, formatDate, formatTime, parseTimeOnDate } from "../utils/date.utils.js";
 import {
+  buildServiceCatalogMessage,
   getDurationForService,
+  getPriceForService,
   isAmbiguousServiceRequest,
   normalizeServiceName,
   validateBusinessRules,
@@ -13,7 +15,7 @@ function ensureDuration(payload) {
   if (!duration) {
     const error = new Error("Servicio inválido.");
     error.statusCode = 400;
-    error.userMessage = "Ese servicio no existe en la lista de servicios de la barbería.";
+    error.userMessage = buildServiceCatalogMessage();
     throw error;
   }
 
@@ -28,8 +30,7 @@ export async function checkAvailabilityMock(payload) {
   if (isAmbiguousServiceRequest(payload.service) && service === "Corte clásico") {
     return {
       available: false,
-      message:
-        "Claro, ofrecemos corte clásico, degradado o fade, barba, corte + barba, cejas y tratamiento capilar. ¿Cuál te gustaría?",
+      message: buildServiceCatalogMessage(),
       alternatives: [],
     };
   }
@@ -66,8 +67,7 @@ export async function createAppointmentMock(payload) {
   if (isAmbiguousServiceRequest(payload.service) && service === "Corte clásico") {
     const error = new Error("Servicio ambiguo.");
     error.statusCode = 400;
-    error.userMessage =
-      "Claro, ofrecemos corte clásico, degradado o fade, barba, corte + barba, cejas y tratamiento capilar. ¿Cuál te gustaría?";
+    error.userMessage = buildServiceCatalogMessage();
     throw error;
   }
 
@@ -94,6 +94,7 @@ export async function createAppointmentMock(payload) {
       summary: `Cita - ${service} - ${payload.customerName}`,
       start: `${formatDate(dateTime)} ${formatTime(dateTime)}`,
       timezone: TIME_ZONE,
+      price: getPriceForService(service),
     },
   };
 }

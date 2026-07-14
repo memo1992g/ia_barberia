@@ -1,4 +1,5 @@
 import type { CallStatus } from "@/lib/realtime";
+import { SERVICE_PRICES } from "@/lib/server/availability.utils";
 import { CallStatus as StatusBadge } from "./CallStatus";
 
 export function CallCard({
@@ -119,12 +120,24 @@ export function CallCard({
                 Servicios disponibles
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/72">
-                <span className="rounded-full border border-white/10 px-3 py-1">Corte clasico</span>
-                <span className="rounded-full border border-white/10 px-3 py-1">Fade</span>
-                <span className="rounded-full border border-white/10 px-3 py-1">Barba</span>
-                <span className="rounded-full border border-white/10 px-3 py-1">Corte + barba</span>
-                <span className="rounded-full border border-white/10 px-3 py-1">Cejas</span>
-                <span className="rounded-full border border-white/10 px-3 py-1">Tratamiento capilar</span>
+                <span className="rounded-full border border-white/10 px-3 py-1">
+                  Corte clásico ${SERVICE_PRICES["Corte clásico"]}
+                </span>
+                <span className="rounded-full border border-white/10 px-3 py-1">
+                  Fade ${SERVICE_PRICES["Degradado / Fade"]}
+                </span>
+                <span className="rounded-full border border-white/10 px-3 py-1">
+                  Barba ${SERVICE_PRICES["Barba"]}
+                </span>
+                <span className="rounded-full border border-white/10 px-3 py-1">
+                  Cejas ${SERVICE_PRICES["Cejas"]}
+                </span>
+                <span className="rounded-full border border-white/10 px-3 py-1">
+                  Tratamiento capilar ${SERVICE_PRICES["Tratamiento capilar"]}
+                </span>
+                <span className="rounded-full border border-evo-gold/25 bg-evo-gold/10 px-3 py-1 text-evo-goldSoft">
+                  Combinados suman precios
+                </span>
               </div>
             </div>
           </div>

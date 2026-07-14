@@ -159,6 +159,7 @@ export default function Page() {
 
     const message = `Cita confirmada en ${BARBERSHOP_NAME}%0A
 Servicio: ${appointment.service}%0A
+Precio: ${typeof appointment.price === "number" ? `$${appointment.price}` : "N/A"}%0A
 Cliente: ${appointment.customerName}%0A
 Fecha: ${appointment.date}%0A
 Hora: ${appointment.startTime}%0A
@@ -167,6 +168,7 @@ Agendada por: AZENTYA Voice Agent`;
 
     const rawMessage = `Cita confirmada en ${BARBERSHOP_NAME}
 Servicio: ${appointment.service}
+Precio: ${typeof appointment.price === "number" ? `$${appointment.price}` : "N/A"}
 Cliente: ${appointment.customerName}
 Fecha: ${appointment.date}
 Hora: ${appointment.startTime}
@@ -200,10 +202,11 @@ Agendada por: AZENTYA Voice Agent`;
       `Cliente: ${appointment.customerName}`,
       `Teléfono: ${appointment.phone}`,
       `Servicio: ${appointment.service}`,
+      typeof appointment.price === "number" ? `Precio: $${appointment.price}` : "",
       `Fecha: ${appointment.date}`,
       `Hora: ${appointment.startTime}`,
       `Creado por: AZENTYA Voice Agent`,
-    ].join("\\n");
+    ].filter(Boolean).join("\\n");
     const dtStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 
     const ics = [
@@ -461,6 +464,11 @@ Agendada por: AZENTYA Voice Agent`;
                 <p>
                   <span className="text-white/55">Duración:</span> {appointment.durationMinutes} min
                 </p>
+                {typeof appointment.price === "number" ? (
+                  <p>
+                    <span className="text-white/55">Precio:</span> ${appointment.price}
+                  </p>
+                ) : null}
                 {appointment.eventId ? (
                   <p>
                     <span className="text-white/55">Event ID:</span> {appointment.eventId}
@@ -748,6 +756,9 @@ Agendada por: AZENTYA Voice Agent`;
                       {appointment.date} · {appointment.startTime}
                     </div>
                     <div className="mt-1 text-white/65">{appointment.phone}</div>
+                    {typeof appointment.price === "number" ? (
+                      <div className="mt-1 text-white/65">Precio: ${appointment.price}</div>
+                    ) : null}
                   </div>
                 </div>
               ) : (

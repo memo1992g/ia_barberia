@@ -39,6 +39,11 @@ export function AppointmentPanel({
               <p>
                 <span className="text-white/55">Duracion:</span> {appointment.durationMinutes} min
               </p>
+              {typeof appointment.price === "number" ? (
+                <p>
+                  <span className="text-white/55">Precio:</span> ${appointment.price}
+                </p>
+              ) : null}
               {appointment.eventId ? (
                 <p>
                   <span className="text-white/55">Event ID:</span> {appointment.eventId}

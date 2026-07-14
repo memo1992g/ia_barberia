@@ -25,11 +25,21 @@ export const SERVICE_DURATIONS = {
   "Tratamiento capilar": 60,
 };
 
+export const SERVICE_PRICES = {
+  "Corte clásico": 8,
+  "Degradado / Fade": 10,
+  Barba: 5,
+  "Corte + barba": 12,
+  Cejas: 4,
+  "Tratamiento capilar": 15,
+};
+
 const SERVICE_ALIASES = {
   "corte de cabello": "Corte clásico",
   corte: "Corte clásico",
   "corte clásico": "Corte clásico",
   "corte clasico": "Corte clásico",
+  "corte barba": "Corte + barba",
   fade: "Degradado / Fade",
   degradado: "Degradado / Fade",
   "degradado / fade": "Degradado / Fade",
@@ -39,6 +49,62 @@ const SERVICE_ALIASES = {
   cejas: "Cejas",
   "tratamiento capilar": "Tratamiento capilar",
 };
+
+const SERVICE_NAME_LOOKUP = Object.keys(SERVICE_DURATIONS).reduce((acc, name) => {
+  const normalized = name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  acc[normalized] = name;
+  return acc;
+}, {});
+
+function normalizeServiceToken(token) {
+  const normalized = String(token || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return SERVICE_ALIASES[normalized] || SERVICE_NAME_LOOKUP[normalized] || "";
+}
+
+function splitServiceRequest(service) {
+  const raw = String(service || "").trim();
+  if (!raw) return [];
+
+  const normalized = raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const exact = normalizeServiceToken(normalized);
+  if (exact) {
+    return [exact];
+  }
+
+  return normalized
+    .split(/\s*(?:\+|\/|\by\b|\bcon\b)\s*/i)
+    .map((part) => normalizeServiceToken(part))
+    .filter(Boolean)
+    .filter((part, index, array) => array.indexOf(part) === index);
+}
+
+export function buildServiceCatalogMessage() {
+  return [
+    "Claro, estos son los servicios y precios:",
+    "Corte clásico: $8",
+    "Degradado / Fade: $10",
+    "Barba: $5",
+    "Cejas: $4",
+    "Tratamiento capilar: $15",
+    "También podés pedir combinados como corte + barba o barba + cejas; en ese caso se suman los servicios.",
+  ].join(" ");
+}
 
 const DIGIT_WORDS = {
   cero: "0",
@@ -81,20 +147,24 @@ const TENS_WORDS = {
 };
 
 export function normalizeServiceName(service) {
-  const raw = String(service || "").trim();
-  if (!raw) return "";
+  const parts = splitServiceRequest(service);
+  if (parts.length === 1) {
+    return parts[0];
+  }
 
-  const normalized = raw
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  if (parts.length > 1) {
+    return parts.join(" + ");
+  }
 
-  return SERVICE_ALIASES[normalized] || raw;
+  return String(service || "").trim();
 }
 
 export function isAmbiguousServiceRequest(service) {
+  const parts = splitServiceRequest(service);
+  if (parts.length > 1) {
+    return false;
+  }
+
   const normalized = String(service || "")
     .trim()
     .toLowerCase()
@@ -107,8 +177,19 @@ export function isAmbiguousServiceRequest(service) {
 }
 
 export function getDurationForService(service) {
-  const normalized = normalizeServiceName(service);
-  return SERVICE_DURATIONS[normalized] || null;
+  const parts = splitServiceRequest(service);
+  if (parts.length === 0) return null;
+
+  const duration = parts.reduce((total, part) => total + (SERVICE_DURATIONS[part] || 0), 0);
+  return duration > 0 ? duration : null;
+}
+
+export function getPriceForService(service) {
+  const parts = splitServiceRequest(service);
+  if (parts.length === 0) return null;
+
+  const price = parts.reduce((total, part) => total + (SERVICE_PRICES[part] || 0), 0);
+  return price > 0 ? price : null;
 }
 
 function normalizeWordToken(token) {
