@@ -1,4 +1,4 @@
-const REALTIME_MODEL = "gpt-realtime";
+const REALTIME_MODEL = "gpt-realtime-2.1";
 const REALTIME_VOICE = "coral";
 
 function buildSofiaInstructions() {
